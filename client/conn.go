@@ -51,7 +51,6 @@ func (c *Connection) handle(ctx context.Context) {
 
 	waitingForResponse := map[string]chan Response{}
 
-	c.ping()
 	for {
 		select {
 		case msg := <-c.send:
@@ -78,9 +77,6 @@ func (c *Connection) handle(ctx context.Context) {
 				delete(waitingForResponse, resp.CustomTag)
 			}
 
-		case <-time.After(time.Second * 10):
-			c.ping()
-
 		case <-ctx.Done():
 			c.Close()
 
@@ -91,12 +87,6 @@ func (c *Connection) handle(ctx context.Context) {
 			return
 		}
 	}
-}
-
-func (c *Connection) ping() {
-	c.write(Request{
-		Command: "ping",
-	})
 }
 
 func (c *Connection) read(ctx context.Context) {

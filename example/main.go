@@ -17,23 +17,24 @@ func main() {
 		RequestInterval: client.MIN_REQUEST_INTERVAL,
 	})
 
-	if err := c.Dial(context.Background()); err != nil {
-		log.Fatalln(err)
-	}
-
-	if _, err := command.Login(c, command.LoginData{
+	lResp, err := c.Login(context.Background(), command.LoginRequest{
 		UserId:   os.Getenv("XTB_USER_ID"),
 		Password: os.Getenv("XTB_PASSWORD"),
-	}); err != nil {
+	})
+	if err != nil {
 		log.Fatalln(err)
 	}
 
-	resp, err := command.GetCurrentUserData(c)
+	fmt.Printf("%+v\n", lResp)
+
+	resp, err := c.GetCurrentUserData()
 	if err != nil {
 		log.Fatalln(err)
 	}
 
 	fmt.Printf("%+v\n", resp)
 
-	c.CloseConnection()
+	if err := c.Logout(); err != nil {
+		log.Fatalln(err)
+	}
 }

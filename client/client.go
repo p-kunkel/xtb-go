@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/p-kunkel/xtb-go/command"
 )
 
 var (
@@ -36,7 +37,7 @@ type Config struct {
 }
 
 type Request struct {
-	Command   string      `json:"command,omitempty"`
+	Command   string      `json:"command"`
 	Arguments interface{} `json:"arguments,omitempty"`
 	CustomTag string      `json:"customTag,omitempty"`
 }
@@ -99,10 +100,82 @@ func (c *Client) Do(req Request) (Response, error) {
 	return resp, nil
 }
 
-func (c *Client) Dial(ctx context.Context) error {
-	return c.conn.dial(ctx)
+func (c *Client) do(req Request, result interface{}) error {
+	resp, err := c.Do(req)
+	if err != nil {
+		return err
+	}
+
+	if len(resp.ReturnData) > 0 {
+		if err := json.Unmarshal([]byte(resp.ReturnData), result); err != nil {
+			return nil
+		}
+	}
+
+	return nil
 }
 
-func (c *Client) CloseConnection() {
+func (c *Client) Login(ctx context.Context, lr command.LoginRequest) (command.LoginResponse, error) {
+	result := command.LoginResponse{}
+	req := Request{
+		Command:   "login",
+		Arguments: lr,
+		CustomTag: uuid.NewString(),
+	}
+
+	if err := c.conn.dial(ctx); err != nil {
+		return command.LoginResponse{}, err
+	}
+
+	if err := c.do(req, &result); err != nil {
+		return command.LoginResponse{}, err
+	}
+
+	go func() {
+		ticker := time.NewTicker(20 * time.Second)
+		for c.conn.isConnected {
+			<-ticker.C
+			c.Ping()
+		}
+	}()
+
+	return result, nil
+}
+
+func (c *Client) Logout() error {
+	req := Request{
+		Command:   "logout",
+		CustomTag: uuid.NewString(),
+	}
+
+	if _, err := c.Do(req); err != nil {
+		return err
+	}
+
 	c.conn.Close()
+	return nil
+}
+
+func (c *Client) Ping() error {
+	req := Request{
+		Command:   "ping",
+		CustomTag: uuid.NewString(),
+	}
+
+	_, err := c.Do(req)
+	return err
+}
+
+func (c *Client) GetCurrentUserData() (command.GetCurrentUserDataResponse, error) {
+	result := command.GetCurrentUserDataResponse{}
+	req := Request{
+		Command:   "getCurrentUserData",
+		CustomTag: uuid.NewString(),
+	}
+
+	if err := c.do(req, &result); err != nil {
+		return command.GetCurrentUserDataResponse{}, err
+	}
+
+	return result, nil
 }

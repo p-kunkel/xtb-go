@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"golang.org/x/net/websocket"
@@ -14,12 +15,12 @@ type requestResponse struct {
 }
 
 type Connection struct {
-	conn        *websocket.Conn
-	conf        Config
-	send        chan requestResponse
-	receive     chan Response
-	closeConn   chan bool
-	isConnected bool
+	conn               *websocket.Conn
+	conf               Config
+	send               chan requestResponse
+	waitingForResponse sync.Map
+	closeConn          chan bool
+	isConnected        bool
 }
 
 func (c *Connection) dial(ctx context.Context) error {
@@ -33,31 +34,30 @@ func (c *Connection) dial(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
 	c.conn, err = cfg.DialContext(ctx)
 	if err != nil {
 		return err
 	}
 
 	c.isConnected = true
-	go c.handle(ctx)
+
+	go c.readLoop(ctx)
+	go c.writeLoop(ctx)
 	return nil
 }
 
-func (c *Connection) handle(ctx context.Context) {
-	go c.read(ctx)
-
+func (c *Connection) writeLoop(ctx context.Context) {
 	requestIntervalTicker := time.NewTicker(c.conf.RequestInterval)
 	defer requestIntervalTicker.Stop()
-
-	waitingForResponse := map[string]chan Response{}
 
 	for {
 		select {
 		case msg := <-c.send:
 			<-requestIntervalTicker.C
 
-			if err := c.write(msg.req); err != nil {
-				c.receive <- Response{
+			if err := websocket.JSON.Send(c.conn, msg.req); err != nil {
+				msg.resp <- Response{
 					Status:    false,
 					CustomTag: msg.req.CustomTag,
 					ErrorResp: ErrorResp{
@@ -65,46 +65,63 @@ func (c *Connection) handle(ctx context.Context) {
 						ErrorDescr: err.Error(),
 					},
 				}
+				continue
 			}
 
-			waitingForResponse[msg.req.CustomTag] = msg.resp
-
-		case resp := <-c.receive:
-			if respChan, ok := waitingForResponse[resp.CustomTag]; ok {
-				respChan <- resp
-
-				close(respChan)
-				delete(waitingForResponse, resp.CustomTag)
-			}
+			c.waitingForResponse.Store(msg.req.CustomTag, msg.resp)
 
 		case <-ctx.Done():
 			c.Close()
 
 		case <-c.closeConn:
 			close(c.send)
-			close(c.receive)
+			c.waitingForResponse.Clear()
 			c.conn.Close()
 			return
 		}
 	}
 }
 
-func (c *Connection) read(ctx context.Context) {
-	b := Response{}
+func (c *Connection) readLoop(ctx context.Context) {
+	var (
+		resp Response
+		err  error
+	)
+
 	for c.isConnected {
-		b = Response{}
-		if err := websocket.JSON.Receive(c.conn, &b); err != nil {
+		resp = Response{}
+
+		if err = websocket.JSON.Receive(c.conn, &resp); err != nil {
+			c.waitingForResponse.Range(func(key, value any) bool {
+				resp := Response{
+					Status:    false,
+					CustomTag: key.(string),
+					ErrorResp: ErrorResp{
+						ErrorCode:  "read_loop",
+						ErrorDescr: err.Error(),
+					},
+				}
+
+				respChan := value.(chan Response)
+				respChan <- resp
+				close(respChan)
+				return true
+			})
+
+			c.waitingForResponse.Clear()
 			c.Close()
 			break
 		}
 
-		c.receive <- b
+		if r, ok := c.waitingForResponse.Load(resp.CustomTag); ok {
+			respChan := r.(chan Response)
+			respChan <- resp
+
+			close(respChan)
+			c.waitingForResponse.Delete(resp.CustomTag)
+		}
 	}
 	c.closeConn <- true
-}
-
-func (c *Connection) write(r Request) error {
-	return websocket.JSON.Send(c.conn, r)
 }
 
 func (c *Connection) Close() {

@@ -3,7 +3,6 @@ package client
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -22,16 +21,14 @@ var (
 )
 
 type Client struct {
-	conn                *Connection
-	restartConnectionFn func() error
+	conn            *Connection
+	streamSessionId string
 }
 
 type Config struct {
 	Host            string
 	Mode            string
 	RequestInterval time.Duration
-
-	RestartConnectionFn func() error
 
 	logger *log.Logger
 }
@@ -64,24 +61,12 @@ func New(conf Config) *Client {
 		conn: &Connection{
 			conf:      conf,
 			send:      make(chan requestResponse),
-			receive:   make(chan Response),
 			closeConn: make(chan bool),
 		},
-		restartConnectionFn: conf.RestartConnectionFn,
 	}
 }
 
 func (c *Client) Do(req Request) (Response, error) {
-	if !c.conn.isConnected {
-		if c.restartConnectionFn == nil {
-			return Response{}, errors.New("connection has broken")
-		}
-
-		if err := c.restartConnectionFn(); err != nil {
-			return Response{}, fmt.Errorf("restart connection fail: %w", err)
-		}
-	}
-
 	if req.CustomTag == "" {
 		req.CustomTag = uuid.NewString()
 	}
@@ -117,7 +102,6 @@ func (c *Client) do(req Request, result interface{}) error {
 }
 
 func (c *Client) Login(ctx context.Context, lr command.LoginRequest) (command.LoginResponse, error) {
-	result := command.LoginResponse{}
 	req := Request{
 		Command:   "login",
 		Arguments: lr,
@@ -133,10 +117,13 @@ func (c *Client) Login(ctx context.Context, lr command.LoginRequest) (command.Lo
 		return command.LoginResponse{}, err
 	}
 
-	result.StreamSessionId = resp.StreamSessionId
+	c.streamSessionId = resp.StreamSessionId
+	result := command.LoginResponse{
+		StreamSessionId: resp.StreamSessionId,
+	}
 
 	go func() {
-		ticker := time.NewTicker(20 * time.Second)
+		ticker := time.NewTicker(1 * time.Minute)
 		for c.conn.isConnected {
 			<-ticker.C
 			c.Ping()

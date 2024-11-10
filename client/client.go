@@ -124,8 +124,12 @@ func (c *Client) Login(ctx context.Context, lr command.LoginRequest) (command.Lo
 
 	go func() {
 		ticker := time.NewTicker(1 * time.Minute)
-		for c.conn.isConnected {
+		defer ticker.Stop()
+		for {
 			<-ticker.C
+			if !c.conn.isConnected {
+				break
+			}
 			c.Ping()
 		}
 	}()

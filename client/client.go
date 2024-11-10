@@ -36,6 +36,14 @@ type Request struct {
 	CustomTag string      `json:"customTag,omitempty"`
 }
 
+func NewRequestWithRandomTag(cmd string, arg interface{}) Request {
+	return Request{
+		Command:   cmd,
+		Arguments: arg,
+		CustomTag: uuid.NewString(),
+	}
+}
+
 type Response struct {
 	Status          bool            `json:"status"`
 	CustomTag       string          `json:"customTag"`
@@ -83,7 +91,8 @@ func (c *Client) Do(req Request) (Response, error) {
 	return resp, nil
 }
 
-func (c *Client) do(req Request, result interface{}) error {
+// Do request and bind response.ReturnData to result
+func (c *Client) DoAndBind(req Request, result interface{}) error {
 	resp, err := c.Do(req)
 	if err != nil {
 		return err
@@ -99,17 +108,11 @@ func (c *Client) do(req Request, result interface{}) error {
 }
 
 func (c *Client) Login(ctx context.Context, lr command.LoginRequest) (command.LoginResponse, error) {
-	req := Request{
-		Command:   "login",
-		Arguments: lr,
-		CustomTag: uuid.NewString(),
-	}
-
 	if err := c.conn.dial(ctx); err != nil {
 		return command.LoginResponse{}, err
 	}
 
-	resp, err := c.Do(req)
+	resp, err := c.Do(NewRequestWithRandomTag("login", lr))
 	if err != nil {
 		return command.LoginResponse{}, err
 	}
@@ -131,12 +134,7 @@ func (c *Client) Login(ctx context.Context, lr command.LoginRequest) (command.Lo
 }
 
 func (c *Client) Logout() error {
-	req := Request{
-		Command:   "logout",
-		CustomTag: uuid.NewString(),
-	}
-
-	if _, err := c.Do(req); err != nil {
+	if _, err := c.Do(NewRequestWithRandomTag("logout", nil)); err != nil {
 		return err
 	}
 
@@ -145,25 +143,14 @@ func (c *Client) Logout() error {
 }
 
 func (c *Client) Ping() error {
-	req := Request{
-		Command:   "ping",
-		CustomTag: uuid.NewString(),
-	}
-
-	_, err := c.Do(req)
+	_, err := c.Do(NewRequestWithRandomTag("ping", nil))
 	return err
 }
 
 func (c *Client) GetCurrentUserData() (command.GetCurrentUserDataResponse, error) {
 	result := command.GetCurrentUserDataResponse{}
-	req := Request{
-		Command:   "getCurrentUserData",
-		CustomTag: uuid.NewString(),
-	}
-
-	if err := c.do(req, &result); err != nil {
+	if err := c.DoAndBind(NewRequestWithRandomTag("getCurrentUserData", nil), &result); err != nil {
 		return command.GetCurrentUserDataResponse{}, err
 	}
-
 	return result, nil
 }

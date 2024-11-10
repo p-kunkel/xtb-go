@@ -43,9 +43,10 @@ type Request struct {
 }
 
 type Response struct {
-	Status     bool            `json:"status"`
-	CustomTag  string          `json:"customTag"`
-	ReturnData json.RawMessage `json:"returnData,omitempty"`
+	Status          bool            `json:"status"`
+	CustomTag       string          `json:"customTag"`
+	ReturnData      json.RawMessage `json:"returnData,omitempty"`
+	StreamSessionId string          `json:"streamSessionId,omitempty"`
 	ErrorResp
 }
 
@@ -127,9 +128,12 @@ func (c *Client) Login(ctx context.Context, lr command.LoginRequest) (command.Lo
 		return command.LoginResponse{}, err
 	}
 
-	if err := c.do(req, &result); err != nil {
+	resp, err := c.Do(req)
+	if err != nil {
 		return command.LoginResponse{}, err
 	}
+
+	result.StreamSessionId = resp.StreamSessionId
 
 	go func() {
 		ticker := time.NewTicker(20 * time.Second)

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -29,8 +28,6 @@ type Config struct {
 	Host            string
 	Mode            string
 	RequestInterval time.Duration
-
-	logger *log.Logger
 }
 
 type Request struct {

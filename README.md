@@ -9,7 +9,7 @@ Unofficial API client for XTB trading platform written in GO.
 ```
 go get github.com/p-kunkel/xtb-go
 ```
-> GO version required `1.23.2`
+> GO version required >= `1.24.0`
 
 
 # License
